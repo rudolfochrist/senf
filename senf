@@ -1,0 +1,120 @@
+#!/bin/zsh
+
+# user vars
+SENF_STORE=${SENF_STORE:-"$HOME/.senf"}
+
+# var
+tmpfile=""
+trap 'rm -f "$tmpfile"' 0 2 3 15
+
+docs=()
+function doc() {
+    local docstring="$(printf "%-40s -- %s" "$1" "$2")"
+    docs+=$docstring
+}
+
+doc "setup" "Initialize a new secured env store"
+function setup {
+    if [[ -d "$SENF_STORE" ]]; then
+        echo "senf store already initialized: $SENF_STORE"
+        exit 1
+    fi
+
+    mkdir -p "$SENF_STORE"
+    echo "Created: $SENF_STORE"
+}
+
+doc "add-group <name>" "Add a new group."
+function addgroup {
+    local name="$1"
+    local group_store="$SENF_STORE/$name"
+    mkdir "$group_store"
+    age-keygen -o "$group_store/$name.key"
+}
+
+doc "new <group> <environment>" "Create a new encrypted env file"
+function new {
+    local group="$1"
+    local environment="$2"
+    local key="$SENF_STORE/$group/$group.key"
+    local envfile="$SENF_STORE/$group/$environment.env"
+    touch "$envfile"
+    age -e -a -i "$key" -o "$envfile.enc" "$envfile"
+    echo "$envfile.enc created"
+    rm "$envfile"
+}
+
+doc "show <group> <environment>" "Show envfile."
+function show {
+    local group="$1"
+    local env="$2"
+    local key="$SENF_STORE/$group/$group.key"
+    local envfile="$SENF_STORE/$group/$env.env.enc"
+    age -d -i "$key" "$envfile"
+}
+
+doc "edit <group> <environment>" "Edit envfile."
+function edit {
+    local group="$1"
+    local env="$2"
+    local key="$SENF_STORE/$group/$group.key"
+    local envfile="$SENF_STORE/$group/$env.env.enc"
+    tmpfile="$(gmktemp -p "$TMPDIR" --suffix ".env" "$env".XXXXXX)"
+
+    age -d -i "$key" "$envfile" > "$tmpfile"
+    vim "$tmpfile"
+    age -e -a -i "$key" -o "$envfile" "$tmpfile"
+}
+
+doc "run <group> <environment> -- <process>" "Start <process> with env vars from group/env"
+function run {
+    local group="$1"
+    local env="$2"
+    local key="$SENF_STORE/$group/$group.key"
+    local envfile="$SENF_STORE/$group/$env.env.enc"
+
+    vars="$(age -d -i $key $envfile)"
+
+    while IFS= read -r line; do
+        source <(echo "export $line")
+    done <<< "$vars"
+
+    while (( $# )); do
+        case "$1" in
+            --)
+                shift
+                break
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    source <(echo "$@")
+}
+
+doc "help" "Display help"
+function help() {
+    echo "senf <command> <args>"
+    echo "Commands:"
+    for d in $docs; do
+        echo $d
+    done
+}
+
+version=0.1.0
+doc "version" "Show version"
+function version {
+    echo "senf v$version"
+}
+
+function default() {
+    help
+}
+
+if ! command -v age > /dev/null ; then
+    echo "age not found. Please install age."
+    exit 1
+fi
+
+${@:-default}
