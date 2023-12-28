@@ -10,7 +10,7 @@ senf --- secured env files
 
 * VERSION
 
-0.1.0
+0.1
 
 * SYNOPSIS
 
